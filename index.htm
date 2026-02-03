@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Multi-Omics Database | Home</title>
+    <link rel="stylesheet" href="assets/style.css">
+    <script src="https://unpkg.com/cytoscape@3.26.2/dist/cytoscape.min.js"></script>
+    <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+</head>
+<body>
+
+<h1>Multi-Omics Database</h1>
+
+<nav class="navbar">
+    <div class="nav-left">
+        <a href="index.html" class="logo">
+            <img src="assets/logo.png" alt="Multi-Omics Database">
+            <span>Multi-Omics DB</span>
+        </a>
+    </div>
+
+    <div class="nav-right">
+        <a href="index.html">Home</a>
+        <a href="downloads.html">Downloads</a>
+        <a href="statistics.html">Statistics</a>
+        <a href="network.html">Network</a>
+        <a href="about.html">About</a>
+    </div>
+</nav>
+
+
+<h2>Project Overview</h2>
+<p>
+This database provides a comprehensive collection of multi-omics datasets generated from a large-scale
+integrative study, including transcriptomics, metatranscriptomics, metabolomics,
+and microbial community profiling of bacteria, fungi, and viruses.
+</p>
+
+<p>
+The resource is designed to facilitate systematic exploration of cross-omics interactions
+and to support reproducible computational analyses.
+</p>
+
+<h2>Integrated Multi-Omics Network</h2>
+
+<p>
+We present an interactive overview of multi-omics correlation networks,
+integrating microbial taxa, host genes.
+Nodes are colored by biological category, and edges represent significant correlations.
+</p>
+
+<div id="cy" style="width:100%; height:520px; border:1px solid #ddd;"></div>
+
+<div style="margin-top:10px; font-size:14px;">
+    <span style="color:#1f77b4;">●</span> Bacteria
+    <span style="margin-left:15px; color:#ff7f0e;">●</span> Fungi
+    <span style="margin-left:15px; color:#2ca02c;">●</span> Virus
+    <span style="margin-left:15px; color:#d62728;">●</span> Host / Other
+</div>
+
+<script>
+const CORR_THRESHOLD = 0.4;
+
+// 判断节点类型（按你目前数据最稳妥）
+function inferType(name) {
+    const n = name.toLowerCase();
+    if (n.includes("virus") || n.includes("phage")) return "Virus";
+    if (n.includes("fungi")) return "Fungi";
+    if (name.startsWith("g__") || name.startsWith("s__")) return "Bacteria";
+    return "Other";
+}
+
+Papa.parse("data/matrices/data.csv", {
+    download: true,
+    header: true,
+    complete: function(res) {
+
+        const nodes = {};
+        const edges = [];
+
+        res.data.forEach(row => {
+            const source = row[Object.keys(row)[0]];
+            Object.entries(row).forEach(([target, val]) => {
+                const r = parseFloat(val);
+                if (!isNaN(r) && Math.abs(r) >= CORR_THRESHOLD && source !== target) {
+
+                    if (!nodes[source])
+                        nodes[source] = { data: { id: source, type: inferType(source) }};
+                    if (!nodes[target])
+                        nodes[target] = { data: { id: target, type: inferType(target) }};
+
+                    edges.push({
+                        data: { source: source, target: target, weight: r }
+                    });
+                }
+            });
+        });
+
+        const elements = [...Object.values(nodes), ...edges];
+
+        cytoscape({
+            container: document.getElementById("cy"),
+            elements: elements,
+            style: [
+                {
+                    selector: "node",
+                    style: {
+                        "label": "data(id)",
+                        "font-size": "7px",
+                        "background-color": ele => ({
+                            "Bacteria": "#1f77b4",
+                            "Fungi": "#ff7f0e",
+                            "Virus": "#2ca02c",
+                            "Other": "#d62728"
+                        }[ele.data("type")])
+                    }
+                },
+                {
+                    selector: "edge",
+                    style: {
+                        "width": "mapData(weight, 0.6, 1, 1, 4)",
+                        "line-color": "#999",
+                        "opacity": 0.6
+                    }
+                }
+            ],
+            layout: {
+                name: "cose",
+                animate: false
+            }
+        });
+    }
+});
+</script>
+
+<p>
+<a class="button" href="network.html">Explore Correlation Network</a>
+</p>
+
+</body>
+</html>
+
