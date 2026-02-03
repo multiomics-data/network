@@ -51,12 +51,6 @@ Nodes are colored by biological category, and edges represent significant correl
 
 <div id="cy" style="width:100%; height:520px; border:1px solid #ddd;"></div>
 
-<div style="margin-top:10px; font-size:14px;">
-    <span style="color:#1f77b4;">●</span> Bacteria
-    <span style="margin-left:15px; color:#ff7f0e;">●</span> Fungi
-    <span style="margin-left:15px; color:#2ca02c;">●</span> Virus
-    <span style="margin-left:15px; color:#d62728;">●</span> Host / Other
-</div>
 
 <script>
 const CORR_THRESHOLD = 0.4;
@@ -134,9 +128,9 @@ Papa.parse("data/matrices/data.csv", {
                         "background-color": ele => {
                             const type = ele.data("type");
                             const colorMap = {
-                                "bacteria": "#1f77b4",
-                                "virus": "#2ca02c",
-                                "fungi": "#ff7f0e",
+                                "Bacterial": "#1f77b4",
+                                "Virus": "#2ca02c",
+                                "Fungi": "#ff7f0e",
                                 "VF": "#9467bd", // 病毒-真菌交互
                                 "Gene": "#7f7f7f" // 基因节点
                             };
