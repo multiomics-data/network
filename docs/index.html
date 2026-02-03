@@ -61,36 +61,60 @@ Nodes are colored by biological category, and edges represent significant correl
 <script>
 const CORR_THRESHOLD = 0.4;
 
-// 判断节点类型（按你目前数据最稳妥）
-function inferType(name) {
-    const n = name.toLowerCase();
-    if (n.includes("virus") || n.includes("phage")) return "Virus";
-    if (n.includes("fungi")) return "Fungi";
-    if (name.startsWith("g__") || name.startsWith("s__")) return "Bacteria";
-    return "Other";
-}
-
 Papa.parse("data/matrices/data.csv", {
     download: true,
     header: true,
     complete: function(res) {
-
         const nodes = {};
         const edges = [];
-
+        
+        // 获取所有基因列名（从第三列开始）
+        const columns = res.meta.fields;
+        const microbeNameCol = columns[0]; // 第一列：微生物名称
+        const groupCol = columns[1]; // 第二列：分组信息
+        const geneCols = columns.slice(2); // 第三列开始：基因列
+        
         res.data.forEach(row => {
-            const source = row[Object.keys(row)[0]];
-            Object.entries(row).forEach(([target, val]) => {
-                const r = parseFloat(val);
-                if (!isNaN(r) && Math.abs(r) >= CORR_THRESHOLD && source !== target) {
-
-                    if (!nodes[source])
-                        nodes[source] = { data: { id: source, type: inferType(source) }};
-                    if (!nodes[target])
-                        nodes[target] = { data: { id: target, type: inferType(target) }};
-
+            const microbe = row[microbeNameCol];
+            const group = row[groupCol];
+            
+            // 跳过空行
+            if (!microbe || !group) return;
+            
+            // 创建微生物节点
+            if (!nodes[microbe]) {
+                nodes[microbe] = {
+                    data: {
+                        id: microbe,
+                        type: group // 直接使用第二列的分组信息
+                    }
+                };
+            }
+            
+            // 创建基因节点并添加边
+            geneCols.forEach(gene => {
+                const corrValue = row[gene];
+                const r = parseFloat(corrValue);
+                
+                if (!isNaN(r) && Math.abs(r) >= CORR_THRESHOLD) {
+                    // 创建基因节点（如果不存在）
+                    if (!nodes[gene]) {
+                        nodes[gene] = {
+                            data: {
+                                id: gene,
+                                type: "Gene" // 基因节点类型
+                            }
+                        };
+                    }
+                    
+                    // 添加边
                     edges.push({
-                        data: { source: source, target: target, weight: r }
+                        data: {
+                            source: microbe,
+                            target: gene,
+                            weight: r,
+                            type: r > 0 ? "positive" : "negative"
+                        }
                     });
                 }
             });
@@ -107,28 +131,88 @@ Papa.parse("data/matrices/data.csv", {
                     style: {
                         "label": "data(id)",
                         "font-size": "7px",
-                        "background-color": ele => ({
-                            "Bacteria": "#1f77b4",
-                            "Fungi": "#ff7f0e",
-                            "Virus": "#2ca02c",
-                            "Other": "#d62728"
-                        }[ele.data("type")])
+                        "background-color": ele => {
+                            const type = ele.data("type");
+                            const colorMap = {
+                                "bacteria": "#1f77b4",
+                                "virus": "#2ca02c",
+                                "fungi": "#ff7f0e",
+                                "VF": "#9467bd", // 病毒-真菌交互
+                                "Gene": "#7f7f7f" // 基因节点
+                            };
+                            // 不区分大小写
+                            const lowerType = type.toLowerCase();
+                            return colorMap[lowerType] || "#d62728";
+                        }
                     }
                 },
                 {
                     selector: "edge",
                     style: {
-                        "width": "mapData(weight, 0.6, 1, 1, 4)",
-                        "line-color": "#999",
-                        "opacity": 0.6
+                        "width": ele => Math.abs(ele.data("weight")) * 3,
+                        "line-color": ele => ele.data("weight") > 0 ? "#ff4d4d" : "#4d79ff",
+                        "opacity": 0.6,
+                        "curve-style": "bezier"
                     }
                 }
             ],
             layout: {
                 name: "cose",
-                animate: false
+                animate: false,
+                componentSpacing: 100,
+                nodeRepulsion: 100000,
+                idealEdgeLength: 100
             }
         });
+        
+        // 添加图例
+        const legendData = [
+            { label: "Bacteria", color: "#1f77b4" },
+            { label: "Virus", color: "#2ca02c" },
+            { label: "Fungi", color: "#ff7f0e" },
+            { label: "VF", color: "#9467bd" },
+            { label: "Gene", color: "#7f7f7f" },
+            { label: "Positive Correlation", color: "#ff4d4d" },
+            { label: "Negative Correlation", color: "#4d79ff" }
+        ];
+        
+        const legend = document.createElement("div");
+        legend.style.cssText = `
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: white;
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+            z-index: 1000;
+        `;
+        
+        legendData.forEach(item => {
+            const itemDiv = document.createElement("div");
+            itemDiv.style.cssText = `
+                display: flex;
+                align-items: center;
+                margin: 5px 0;
+            `;
+            
+            const colorBox = document.createElement("div");
+            colorBox.style.cssText = `
+                width: 15px;
+                height: 15px;
+                background-color: ${item.color};
+                margin-right: 8px;
+                border: 1px solid #ccc;
+            `;
+            
+            itemDiv.appendChild(colorBox);
+            itemDiv.appendChild(document.createTextNode(item.label));
+            legend.appendChild(itemDiv);
+        });
+        
+        document.getElementById("cy").appendChild(legend);
     }
 });
 </script>
