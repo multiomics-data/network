@@ -51,9 +51,8 @@ Nodes are colored by biological category, and edges represent significant correl
 
 <div id="cy" style="width:100%; height:520px; border:1px solid #ddd;"></div>
 
-
 <script>
-const CORR_THRESHOLD = 0.4;
+const CORR_THRESHOLD = 0.6;
 
 Papa.parse("data/matrices/data.csv", {
     download: true,
@@ -62,153 +61,697 @@ Papa.parse("data/matrices/data.csv", {
         const nodes = {};
         const edges = [];
         
-        // 获取所有基因列名（从第三列开始）
+        // 获取列名
         const columns = res.meta.fields;
-        const microbeNameCol = columns[0]; // 第一列：微生物名称
-        const groupCol = columns[1]; // 第二列：分组信息
-        const geneCols = columns.slice(2); // 第三列开始：基因列
         
-        res.data.forEach(row => {
-            const microbe = row[microbeNameCol];
-            const group = row[groupCol];
-            
-            // 跳过空行
-            if (!microbe || !group) return;
-            
-            // 创建微生物节点
-            if (!nodes[microbe]) {
-                nodes[microbe] = {
+        // 第一列：ID（微生物/功能名称）
+        // 第二列：Type（分组类型）
+        // 第三列及之后：基因列
+        const idCol = "ID";        // 第一列：ID
+        const typeCol = "Type";    // 第二列：Type
+        const geneCols = columns.slice(2); // 从第三列开始是基因列
+        
+        console.log("数据列结构:", {
+            "ID列": idCol,
+            "Type列": typeCol,
+            "基因列数量": geneCols.length,
+            "总列数": columns.length
+        });
+        
+        // 1. 先创建所有基因节点
+        geneCols.forEach(gene => {
+            if (gene && gene.trim() !== '') {
+                nodes[gene] = {
                     data: {
-                        id: microbe,
-                        type: group // 直接使用第二列的分组信息
+                        id: gene,
+                        type: "Gene",
+                        label: gene.split('_')[0], // 简化显示基因名
+                        originalLabel: gene,
+                        degree: 0 // 用于统计连接数
+                    }
+                };
+            }
+        });
+        
+        console.log(`创建了 ${Object.keys(nodes).length} 个基因节点`);
+        
+        // 2. 处理每一行数据（微生物/功能行）
+        res.data.forEach(row => {
+            // 获取微生物/功能ID（第一列）
+            const microbeId = row[idCol];
+            // 跳过空行
+            if (!microbeId || microbeId.trim() === '') return;
+            
+            // 获取分组类型（第二列）
+            const groupType = row[typeCol];
+            
+            // 检查分组类型是否有效
+            if (!groupType || groupType.trim() === '') {
+                console.warn(`ID "${microbeId}" 缺少分组类型`);
+                return;
+            }
+            
+            // 创建微生物/功能节点
+            if (!nodes[microbeId]) {
+                nodes[microbeId] = {
+                    data: {
+                        id: microbeId,
+                        type: groupType,
+                        label: microbeId,
+                        originalLabel: microbeId,
+                        degree: 0 // 用于统计连接数
                     }
                 };
             }
             
-            // 创建基因节点并添加边
+            // 3. 检查与每个基因的相关性
+            let connectionCount = 0;
+            
             geneCols.forEach(gene => {
                 const corrValue = row[gene];
+                
+                // 跳过空值、未定义的值或0
+                if (corrValue === null || corrValue === undefined || corrValue === '' || corrValue === '0') return;
+                
                 const r = parseFloat(corrValue);
                 
-                if (!isNaN(r) && Math.abs(r) >= CORR_THRESHOLD) {
-                    // 创建基因节点（如果不存在）
-                    if (!nodes[gene]) {
-                        nodes[gene] = {
-                            data: {
-                                id: gene,
-                                type: "Gene" // 基因节点类型
-                            }
-                        };
-                    }
+                // 检查是否是有效数字
+                if (isNaN(r)) {
+                    console.warn(`无效的相关性值: "${corrValue}" for ${microbeId} - ${gene}`);
+                    return;
+                }
+                
+                // 只保留绝对值大于等于阈值的相关性
+                if (Math.abs(r) >= CORR_THRESHOLD) {
+                    const edgeId = `${microbeId}_${gene}_${r}`;
                     
-                    // 添加边
                     edges.push({
                         data: {
-                            source: microbe,
+                            id: edgeId,
+                            source: microbeId,
                             target: gene,
                             weight: r,
-                            type: r > 0 ? "positive" : "negative"
+                            correlation: r,
+                            type: r > 0 ? "positive" : "negative",
+                            absWeight: Math.abs(r),
+                            label: r.toFixed(3)
                         }
                     });
+                    
+                    // 更新节点度数
+                    if (nodes[microbeId]) nodes[microbeId].data.degree++;
+                    if (nodes[gene]) nodes[gene].data.degree++;
+                    
+                    connectionCount++;
                 }
             });
+            
+            if (connectionCount > 0) {
+                console.log(`${microbeId} (${groupType}) 有 ${connectionCount} 个显著相关性连接`);
+            }
         });
 
-        const elements = [...Object.values(nodes), ...edges];
+        // 转换节点和边为数组
+        const nodeArray = Object.values(nodes);
+        const edgeArray = edges;
+        
+        console.log(`最终统计：
+        总节点数: ${nodeArray.length}
+        总边数: ${edgeArray.length}
+        节点类型分布:
+          - Virus: ${nodeArray.filter(n => n.data.type === "Virus").length}
+          - Bacterial: ${nodeArray.filter(n => n.data.type === "Bacterial").length}
+          - Fungi: ${nodeArray.filter(n => n.data.type === "Fungi").length}
+          - VF: ${nodeArray.filter(n => n.data.type === "VF").length}
+          - Gene: ${nodeArray.filter(n => n.data.type === "Gene").length}`);
+        
+        const elements = [...nodeArray, ...edgeArray];
 
-        cytoscape({
+        // 创建Cytoscape图
+        const cy = cytoscape({
             container: document.getElementById("cy"),
             elements: elements,
             style: [
+                // 基因节点样式
                 {
-                    selector: "node",
+                    selector: "node[type='Gene']",
                     style: {
-                        "label": "data(id)",
+                        "label": "data(label)",
                         "font-size": "7px",
-                        "background-color": ele => {
-                            const type = ele.data("type");
-                            const colorMap = {
-                                "Bacterial": "#1f77b4",
-                                "Virus": "#2ca02c",
-                                "Fungi": "#ff7f0e",
-                                "VF": "#9467bd", // 病毒-真菌交互
-                                "Gene": "#7f7f7f" // 基因节点
-                            };
-                            // 不区分大小写
-                            const lowerType = type.toLowerCase();
-                            return colorMap[lowerType] || "#d62728";
-                        }
+                        "text-valign": "center",
+                        "text-halign": "center",
+                        "background-color": "#7f7f7f",
+                        "color": "#ffffff",
+                        "width": ele => Math.max(15, Math.min(30, 15 + ele.data("degree") * 0.5)),
+                        "height": ele => Math.max(15, Math.min(30, 15 + ele.data("degree") * 0.5)),
+                        "shape": "rectangle",
+                        "border-width": 1,
+                        "border-color": "#333"
                     }
                 },
+                // 病毒节点样式
                 {
-                    selector: "edge",
+                    selector: "node[type='Virus']",
                     style: {
-                        "width": ele => Math.abs(ele.data("weight")) * 3,
-                        "line-color": ele => ele.data("weight") > 0 ? "#ff4d4d" : "#4d79ff",
-                        "opacity": 0.6,
-                        "curve-style": "bezier"
+                        "label": ele => {
+                            const label = ele.data("label");
+                            // 简化病毒名称显示
+                            return label;
+                        },
+                        "font-size": "8px",
+                        "text-valign": "center",
+                        "text-halign": "center",
+                        "background-color": "#2ca02c",
+                        "color": "#ffffff",
+                        "width": ele => Math.max(25, Math.min(50, 25 + ele.data("degree") * 2)),
+                        "height": ele => Math.max(25, Math.min(50, 25 + ele.data("degree") * 2)),
+                        "shape": "ellipse",
+                        "border-width": 2,
+                        "border-color": "#1a7a1a"
+                    }
+                },
+                // 细菌节点样式
+                {
+                    selector: "node[type='Bacterial']",
+                    style: {
+                        "label": ele => {
+                            const label = ele.data("label");
+                            // 细菌名称通常包含下划线，取第一部分
+                            const parts = label.split('_');
+                            const shortName = parts[0] || label;
+                            return shortName.length > 15 ? shortName.substring(0, 15) + "..." : shortName;
+                        },
+                        "font-size": "8px",
+                        "text-valign": "center",
+                        "text-halign": "center",
+                        "background-color": "#1f77b4",
+                        "color": "#ffffff",
+                        "width": ele => Math.max(20, Math.min(45, 20 + ele.data("degree") * 1.5)),
+                        "height": ele => Math.max(20, Math.min(45, 20 + ele.data("degree") * 1.5)),
+                        "shape": "ellipse",
+                        "border-width": 2,
+                        "border-color": "#155a8a"
+                    }
+                },
+                // 真菌节点样式
+                {
+                    selector: "node[type='Fungi']",
+                    style: {
+                        "label": "data(label)",
+                        "font-size": "8px",
+                        "text-valign": "center",
+                        "text-halign": "center",
+                        "background-color": "#ff7f0e",
+                        "color": "#ffffff",
+                        "width": ele => Math.max(20, Math.min(45, 20 + ele.data("degree") * 1.5)),
+                        "height": ele => Math.max(20, Math.min(45, 20 + ele.data("degree") * 1.5)),
+                        "shape": "ellipse",
+                        "border-width": 2,
+                        "border-color": "#d66a0b"
+                    }
+                },
+                // VF节点样式
+                {
+                    selector: "node[type='VF']",
+                    style: {
+                        "label": ele => {
+                            const label = ele.data("label");
+                            // 提取VF编号
+                            const match = label.match(/\(VF(\d+)\)/);
+                            if (match) {
+                                return `VF${match[1]}`;
+                            }
+                            // 或者提取功能描述
+                            const descMatch = label.match(/^([^\(]+)/);
+                            const desc = descMatch ? descMatch[1].trim() : label;
+                            return desc.length > 10 ? desc.substring(0, 10) + "..." : desc;
+                        },
+                        "font-size": "8px",
+                        "text-valign": "center",
+                        "text-halign": "center",
+                        "background-color": "#9467bd",
+                        "color": "#ffffff",
+                        "width": ele => Math.max(20, Math.min(45, 20 + ele.data("degree") * 1.5)),
+                        "height": ele => Math.max(20, Math.min(45, 20 + ele.data("degree") * 1.5)),
+                        "shape": "diamond",
+                        "border-width": 2,
+                        "border-color": "#7a55a0"
+                    }
+                },
+                // 正相关边样式
+                {
+                    selector: "edge[type='positive']",
+                    style: {
+                        "width": ele => Math.max(1, ele.data("absWeight") * 5),
+                        "line-color": "#ff4d4d",
+                        "opacity": 0.8,
+                        "curve-style": "bezier",
+                        "target-arrow-color": "#ff4d4d",
+                        "target-arrow-shape": "triangle",
+                        "arrow-scale": 0.8,
+                        "label": "data(label)",
+                        "font-size": "6px",
+                        "text-rotation": "autorotate",
+                        "text-margin-y": -5
+                    }
+                },
+                // 负相关边样式
+                {
+                    selector: "edge[type='negative']",
+                    style: {
+                        "width": ele => Math.max(1, ele.data("absWeight") * 5),
+                        "line-color": "#4d79ff",
+                        "opacity": 0.8,
+                        "curve-style": "bezier",
+                        "line-style": "dashed",
+                        "target-arrow-color": "#4d79ff",
+                        "target-arrow-shape": "triangle",
+                        "arrow-scale": 0.8,
+                        "label": "data(label)",
+                        "font-size": "6px",
+                        "text-rotation": "autorotate",
+                        "text-margin-y": -5
                     }
                 }
             ],
             layout: {
                 name: "cose",
-                animate: false,
+                animate: true,
+                animationDuration: 1000,
                 componentSpacing: 100,
                 nodeRepulsion: 100000,
-                idealEdgeLength: 100
+                idealEdgeLength: ele => {
+                    // 根据节点类型调整边的理想长度
+                    const sourceType = cy.getElementById(ele.data("source")).data("type");
+                    const targetType = cy.getElementById(ele.data("target")).data("type");
+                    
+                    if (sourceType === "Gene" || targetType === "Gene") {
+                        return 80; // 基因连接较短
+                    }
+                    return 120; // 其他连接较长
+                },
+                nodeOverlap: 20,
+                gravity: 0.2,
+                numIter: 1000,
+                randomize: true
             }
         });
         
         // 添加图例
-        const legendData = [
-            { label: "Bacteria", color: "#1f77b4" },
-            { label: "Virus", color: "#2ca02c" },
-            { label: "Fungi", color: "#ff7f0e" },
-            { label: "VF", color: "#9467bd" },
-            { label: "Gene", color: "#7f7f7f" },
-            { label: "Positive Correlation", color: "#ff4d4d" },
-            { label: "Negative Correlation", color: "#4d79ff" }
-        ];
+        createLegend(cy);
         
-        const legend = document.createElement("div");
-        legend.style.cssText = `
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            background: white;
-            padding: 10px;
-            border-radius: 5px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-            font-family: Arial, sans-serif;
-            font-size: 12px;
-            z-index: 1000;
-        `;
+        // 添加控制面板
+        createControlPanel(cy, CORR_THRESHOLD);
         
-        legendData.forEach(item => {
-            const itemDiv = document.createElement("div");
-            itemDiv.style.cssText = `
-                display: flex;
-                align-items: center;
-                margin: 5px 0;
-            `;
-            
-            const colorBox = document.createElement("div");
-            colorBox.style.cssText = `
-                width: 15px;
-                height: 15px;
-                background-color: ${item.color};
-                margin-right: 8px;
-                border: 1px solid #ccc;
-            `;
-            
-            itemDiv.appendChild(colorBox);
-            itemDiv.appendChild(document.createTextNode(item.label));
-            legend.appendChild(itemDiv);
-        });
+        // 添加交互功能
+        addInteractions(cy);
         
-        document.getElementById("cy").appendChild(legend);
+        // 初始化时显示所有节点
+        cy.fit();
     }
 });
+
+// 创建图例函数
+function createLegend(cy) {
+    const legendData = [
+        { label: "Virus", color: "#2ca02c", shape: "ellipse" },
+        { label: "Bacterial", color: "#1f77b4", shape: "ellipse" },
+        { label: "Fungi", color: "#ff7f0e", shape: "ellipse" },
+        { label: "VF (Virulence Factor)", color: "#9467bd", shape: "diamond" },
+        { label: "Gene", color: "#7f7f7f", shape: "rectangle" },
+        { 
+            label: "Positive Correlation", 
+            color: "#ff4d4d", 
+            shape: "line",
+            lineStyle: "solid"
+        },
+        { 
+            label: "Negative Correlation", 
+            color: "#4d79ff", 
+            shape: "line",
+            lineStyle: "dashed" 
+        }
+    ];
+    
+    const legend = document.createElement("div");
+    legend.id = "cy-legend";
+    legend.style.cssText = `
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: rgba(255, 255, 255, 0.95);
+        padding: 12px;
+        border-radius: 6px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+        font-family: Arial, sans-serif;
+        font-size: 11px;
+        z-index: 1000;
+        max-width: 200px;
+        max-height: 400px;
+        overflow-y: auto;
+    `;
+    
+    const legendTitle = document.createElement("div");
+    legendTitle.textContent = "Legend";
+    legendTitle.style.cssText = `
+        font-weight: bold;
+        margin-bottom: 10px;
+        border-bottom: 1px solid #ddd;
+        padding-bottom: 6px;
+        font-size: 12px;
+    `;
+    legend.appendChild(legendTitle);
+    
+    // 添加说明
+    const info = document.createElement("div");
+    info.innerHTML = "Node size indicates connection count";
+    info.style.cssText = `
+        font-style: italic;
+        color: #666;
+        margin-bottom: 10px;
+        font-size: 10px;
+        border-top: 1px solid #eee;
+        padding-top: 8px;
+    `;
+    
+    legendData.forEach(item => {
+        const itemDiv = document.createElement("div");
+        itemDiv.style.cssText = `
+            display: flex;
+            align-items: center;
+            margin: 6px 0;
+        `;
+        
+        const symbolDiv = document.createElement("div");
+        symbolDiv.style.cssText = `
+            width: 18px;
+            height: 18px;
+            margin-right: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        `;
+        
+        if (item.shape === "line") {
+            // 创建线条符号
+            const lineDiv = document.createElement("div");
+            lineDiv.style.cssText = `
+                width: 20px;
+                height: 2px;
+                background-color: ${item.color};
+                border-style: ${item.lineStyle || "solid"};
+            `;
+            symbolDiv.appendChild(lineDiv);
+        } else {
+            // 创建节点符号
+            symbolDiv.style.borderRadius = item.shape === "ellipse" ? "50%" : 
+                                          item.shape === "rectangle" ? "2px" : "2px";
+            symbolDiv.style.backgroundColor = item.color;
+            symbolDiv.style.border = "1px solid #333";
+            
+            if (item.shape === "diamond") {
+                symbolDiv.style.transform = "rotate(45deg)";
+                symbolDiv.style.margin = "0 10px 0 0";
+            }
+        }
+        
+        itemDiv.appendChild(symbolDiv);
+        
+        const labelSpan = document.createElement("span");
+        labelSpan.textContent = item.label;
+        labelSpan.style.cssText = "line-height: 1.3;";
+        itemDiv.appendChild(labelSpan);
+        
+        legend.appendChild(itemDiv);
+    });
+    
+    legend.appendChild(info);
+    document.getElementById("cy").appendChild(legend);
+}
+
+// 创建控制面板
+function createControlPanel(cy, initialThreshold) {
+    const panel = document.createElement("div");
+    panel.id = "cy-controls";
+    panel.style.cssText = `
+        position: absolute;
+        bottom: 10px;
+        left: 10px;
+        background: rgba(255, 255, 255, 0.95);
+        padding: 12px;
+        border-radius: 6px;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.15);
+        font-family: Arial, sans-serif;
+        font-size: 11px;
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        min-width: 200px;
+    `;
+    
+    const title = document.createElement("div");
+    title.textContent = "Controls";
+    title.style.cssText = `
+        font-weight: bold;
+        margin-bottom: 5px;
+        border-bottom: 1px solid #ddd;
+        padding-bottom: 5px;
+        font-size: 12px;
+    `;
+    panel.appendChild(title);
+    
+    // 节点类型筛选
+    const filterDiv = document.createElement("div");
+    filterDiv.innerHTML = `
+        <div style="margin-bottom: 8px; font-weight: bold;">Filter by Type:</div>
+        <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+            <label style="display: flex; align-items: center;">
+                <input type="checkbox" class="node-filter" value="Virus" checked> Virus
+            </label>
+            <label style="display: flex; align-items: center;">
+                <input type="checkbox" class="node-filter" value="Bacterial" checked> Bacterial
+            </label>
+            <label style="display: flex; align-items: center;">
+                <input type="checkbox" class="node-filter" value="Fungi" checked> Fungi
+            </label>
+            <label style="display: flex; align-items: center;">
+                <input type="checkbox" class="node-filter" value="VF" checked> VF
+            </label>
+            <label style="display: flex; align-items: center;">
+                <input type="checkbox" class="node-filter" value="Gene" checked> Gene
+            </label>
+        </div>
+    `;
+    panel.appendChild(filterDiv);
+    
+    // 边类型筛选
+    const edgeFilterDiv = document.createElement("div");
+    edgeFilterDiv.innerHTML = `
+        <div style="margin-bottom: 8px; font-weight: bold;">Filter by Correlation:</div>
+        <div style="display: flex; gap: 10px;">
+            <label style="display: flex; align-items: center;">
+                <input type="checkbox" class="edge-filter" value="positive" checked> Positive
+            </label>
+            <label style="display: flex; align-items: center;">
+                <input type="checkbox" class="edge-filter" value="negative" checked> Negative
+            </label>
+        </div>
+    `;
+    panel.appendChild(edgeFilterDiv);
+    
+    // 布局按钮
+    const layoutDiv = document.createElement("div");
+    layoutDiv.innerHTML = `
+        <div style="margin-bottom: 8px; font-weight: bold;">Layout:</div>
+        <div style="display: flex; gap: 5px;">
+            <button class="layout-btn" data-layout="cose">Force-directed</button>
+            <button class="layout-btn" data-layout="circle">Circle</button>
+            <button class="layout-btn" data-layout="grid">Grid</button>
+        </div>
+    `;
+    panel.appendChild(layoutDiv);
+    
+    // 工具按钮
+    const toolsDiv = document.createElement("div");
+    toolsDiv.innerHTML = `
+        <div style="margin-bottom: 8px; font-weight: bold;">Tools:</div>
+        <div style="display: flex; gap: 5px;">
+            <button class="tool-btn" data-action="fit">Fit to View</button>
+            <button class="tool-btn" data-action="reset">Reset View</button>
+        </div>
+    `;
+    panel.appendChild(toolsDiv);
+    
+    document.getElementById("cy").appendChild(panel);
+    
+    // 添加事件监听器
+    setupControlEvents(cy);
+}
+
+// 设置控制面板事件
+function setupControlEvents(cy) {
+    // 节点类型筛选
+    document.querySelectorAll('.node-filter').forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            const type = this.value;
+            const show = this.checked;
+            
+            cy.nodes(`[type="${type}"]`).style('display', show ? 'element' : 'none');
+            
+            // 隐藏与隐藏节点相连的边
+            cy.edges().forEach(edge => {
+                const source = edge.source();
+                const target = edge.target();
+                
+                if (!source.style('display') || !target.style('display')) {
+                    edge.style('display', 'none');
+                } else {
+                    edge.style('display', 'element');
+                }
+            });
+        });
+    });
+    
+    // 边类型筛选
+    document.querySelectorAll('.edge-filter').forEach(checkbox => {
+        checkbox.addEventListener('change', function() {
+            const type = this.value;
+            const show = this.checked;
+            
+            cy.edges(`[type="${type}"]`).style('display', show ? 'element' : 'none');
+        });
+    });
+    
+    // 布局按钮
+    document.querySelectorAll('.layout-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const layout = this.getAttribute('data-layout');
+            const layoutOptions = {
+                name: layout,
+                animate: true,
+                animationDuration: 1000
+            };
+            
+            if (layout === 'circle') {
+                layoutOptions.radius = 250;
+                layoutOptions.startAngle = 3 * Math.PI / 2;
+            }
+            
+            cy.layout(layoutOptions).run();
+        });
+    });
+    
+    // 工具按钮
+    document.querySelectorAll('.tool-btn').forEach(button => {
+        button.addEventListener('click', function() {
+            const action = this.getAttribute('data-action');
+            
+            if (action === 'fit') {
+                cy.fit();
+            } else if (action === 'reset') {
+                cy.reset();
+                cy.fit();
+            }
+        });
+    });
+}
+
+// 添加交互功能
+function addInteractions(cy) {
+    // 鼠标悬停高亮
+    cy.on('mouseover', 'node', function(event) {
+        const node = event.target;
+        
+        // 高亮当前节点
+        node.style({
+            'border-width': 3,
+            'border-color': '#ff0000'
+        });
+        
+        // 高亮相连的边
+        node.connectedEdges().style({
+            'line-color': '#ff0000',
+            'width': edge => edge.data('absWeight') * 8,
+            'opacity': 1
+        });
+        
+        // 高亮相邻节点
+        node.neighborhood().nodes().style({
+            'border-width': 2,
+            'border-color': '#ff9900'
+        });
+    });
+    
+    cy.on('mouseout', 'node', function(event) {
+        const node = event.target;
+        
+        // 恢复节点样式
+        node.style({
+            'border-width': 2,
+            'border-color': function(ele) {
+                const type = ele.data('type');
+                const colorMap = {
+                    'Virus': '#1a7a1a',
+                    'Bacterial': '#155a8a',
+                    'Fungi': '#d66a0b',
+                    'VF': '#7a55a0',
+                    'Gene': '#333'
+                };
+                return colorMap[type] || '#333';
+            }
+        });
+        
+        // 恢复边样式
+        node.connectedEdges().style({
+            'line-color': edge => edge.data('type') === 'positive' ? '#ff4d4d' : '#4d79ff',
+            'width': edge => Math.max(1, edge.data('absWeight') * 5),
+            'opacity': 0.8
+        });
+        
+        // 恢复相邻节点样式
+        node.neighborhood().nodes().style({
+            'border-width': 2,
+            'border-color': function(ele) {
+                const type = ele.data('type');
+                const colorMap = {
+                    'Virus': '#1a7a1a',
+                    'Bacterial': '#155a8a',
+                    'Fungi': '#d66a0b',
+                    'VF': '#7a55a0',
+                    'Gene': '#333'
+                };
+                return colorMap[type] || '#333';
+            }
+        });
+    });
+    
+    // 点击节点显示详细信息
+    cy.on('tap', 'node', function(event) {
+        const node = event.target;
+        const nodeData = node.data();
+        
+        // 显示节点信息
+        alert(`Node Details:
+ID: ${nodeData.id}
+Type: ${nodeData.type}
+Connections: ${nodeData.degree}
+Label: ${nodeData.label || 'N/A'}`);
+    });
+    
+    // 双击节点聚焦
+    cy.on('dbltap', 'node', function(event) {
+        const node = event.target;
+        cy.animate({
+            fit: {
+                eles: node.union(node.neighborhood()),
+                padding: 50
+            },
+            duration: 500
+        });
+    });
+}
 </script>
 
 <p>
