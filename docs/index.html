@@ -52,7 +52,7 @@ Nodes are colored by biological category, and edges represent significant correl
 <div id="cy" style="width:100%; height:520px; border:1px solid #ddd;"></div>
 
 <script>
-const CORR_THRESHOLD = 0.6;
+const CORR_THRESHOLD = 0.3;
 
 Papa.parse("data/matrices/data.csv", {
     download: true,
@@ -760,4 +760,5 @@ Label: ${nodeData.label || 'N/A'}`);
 
 </body>
 </html>
+
 
