@@ -16,3 +16,6 @@ All datasets are available for download:
 - [Download Cytokine Matrices](data/Matrices/cytokine)
 - [Download Metabolic Matrices](data/Matrices/metabolish)
 - [Download RNA Matrices](data/Matrices/transcriptome)
+
+## Raw Data
+The original data for the entire project can be found in [Project NMDC10018476](https://nmdc.cn/resource/genomics/project/detail/NMDC10018476)
