@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Correlation Network</title>
+    <script src="https://unpkg.com/cytoscape@3.26.2/dist/cytoscape.min.js"></script>
+    <link rel="stylesheet" href="assets/style.css">
+    <style>
+        #cy {
+            width: 100%;
+            height: 85vh;
+            border: 1px solid #ccc;
+        }
+        #info {
+            padding: 10px;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+
+<h1>Multi-Omics Correlation Network</h1>
+
+<nav class="navbar">
+    <div class="nav-left">
+        <a href="index.html" class="logo">
+            <img src="assets/logo.png" alt="Multi-Omics Database">
+            <span>Multi-Omics DB</span>
+        </a>
+    </div>
+
+    <div class="nav-right">
+        <a href="index.html">Home</a>
+        <a href="downloads.html">Downloads</a>
+        <a href="statistics.html">Statistics</a>
+        <a href="network.html">Network</a>
+        <a href="about.html">About</a>
+    </div>
+</nav>
+
+<div style="display: flex; gap: 30px; flex-wrap: wrap;">
+    <div>
+        <h3>Gene-level Network</h3>
+        <img src="assets/gene_network.png" style="max-width: 100%;">
+    </div>
+
+    <div>
+        <h3>Cytokine-level Network</h3>
+        <img src="assets/cytokine_network.png" style="max-width: 100%;">
+    </div>
+</div>
+
+</body>
+</html>
