@@ -55,7 +55,8 @@ Nodes are colored by biological category, and edges represent significant correl
     <span style="color: #1f77b4;">●</span> Bacteria
     <span style="margin-left:15px; color:#ff7f0e;">●</span> Fungi
     <span style="margin-left:15px; color:#2ca02c;">●</span> Virus
-    <span style="margin-left:15px; color:#d62728;">●</span> Host / Other
+    <span style="margin-left:15px; color:#d62728;">●</span> VFs
+    <span style="margin-left:15px; color:#cccccc;">●</span> Gene
 </div>
 
 <script>
@@ -131,7 +132,7 @@ Papa.parse("data/matrices/data.csv", {
             "Fungi": "#ff7f0e",
             "Virus": "#2ca02c",
             "Other": "#d62728",
-            "Unknown": "#cccccc"
+            "Gene": "#cccccc"
         };
         
         
@@ -223,4 +224,5 @@ function createLegend(types, colors) {
 
 </body>
 </html>
+
 
